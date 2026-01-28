@@ -239,27 +239,32 @@ class ImmagineEditor:
         if self.img_bytes is None or self.updating_textbox:
             return
 
-        hex_input = self.text_box.get(1.0, tk.END).strip().replace("\n", "")
+        hex_input = self.text_box.get(1.0, tk.END).strip()
         if len(hex_input) % 2 != 0:
             return
 
         try:
-            new_chunk = bytearray.fromhex(hex_input)
+            new_bytes = bytearray.fromhex(hex_input)
+
             start = self.byte_offset
-            end = start + len(new_chunk)
+            end = start + self.window_size
 
-            if self.img_bytes[start:end] == new_chunk:
-                return
+            # sostituzione a flusso continuo
+            self.img_bytes[start:end] = new_bytes
 
-            self.img_bytes[start:end] = new_chunk
+            # riallinea offset alla pagina
+            self.byte_offset = (self.byte_offset // self.window_size) * self.window_size
+
+            self.update_scrollbar()
 
             if self._update_job:
                 self.root.after_cancel(self._update_job)
 
-            self._update_job = self.root.after(200, self._decodifica_preview)
+            self._update_job = self.root.after(300, self._decodifica_preview)
 
         except ValueError:
             pass
+
 
     # ============================================================
     # FORMAT CONVERSION
