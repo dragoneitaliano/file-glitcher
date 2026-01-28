@@ -22,6 +22,14 @@ class ImmagineEditor:
         self.byte_offset = 0
         self.updating_textbox = False
 
+        self.checkpoints = []
+        self.checkpoint_index = -1
+        self.max_checkpoints = 10
+
+        self.checkpoint_label = None
+        self.prev_btn = None
+        self.next_btn = None
+
         self._update_job = None
 
         self.setup_gui()
@@ -110,6 +118,34 @@ class ImmagineEditor:
 
         tk.Button(self.page_frame, text="Vai", command=self.goto_page, bg="#555", fg="white").pack(side="left")
 
+        # ---- CHECKPOINT NAVIGATION sotto immagine ----
+        checkpoint_frame = tk.Frame(image_frame, bg="#2e2e2e")
+        checkpoint_frame.pack(side="bottom", pady=10)
+
+        self.checkpoint_label = tk.Label(
+            checkpoint_frame,
+            text="Checkpoint: - / -",
+            bg="#2e2e2e",
+            fg="white"
+        )
+        self.checkpoint_label.pack(side="left", padx=5)
+
+        self.prev_btn = tk.Button(
+            checkpoint_frame,
+            text="⏮ Precedente",
+            command=self.checkpoint_precedente,
+            state="disabled"
+        )
+        self.prev_btn.pack(side="left", padx=5)
+
+        self.next_btn = tk.Button(
+            checkpoint_frame,
+            text="⏭ Successivo",
+            command=self.checkpoint_successivo,
+            state="disabled"
+        )
+        self.next_btn.pack(side="left", padx=5)
+
     # ============================================================
     # FILE HANDLING
     # ============================================================
@@ -136,6 +172,10 @@ class ImmagineEditor:
             self.update_scrollbar()
 
             self.root.after(1, self.aggiorna_interfaccia)
+
+            self.checkpoints.clear()
+            self.checkpoint_index = -1
+            self.salva_checkpoint()
 
         except Exception:
             self.mostra_errore("File Corrotto")
@@ -176,11 +216,16 @@ class ImmagineEditor:
 
     def _decodifica_preview(self):
         try:
-            self.img = Image.open(io.BytesIO(self.img_bytes))
-            self.img.load()
+            img = Image.open(io.BytesIO(self.img_bytes))
+            img.load()
+
+            self.img = img
+            self.salva_checkpoint()
             self.aggiorna_interfaccia()
+
         except Exception:
             self.mostra_errore("File Corrotto")
+
 
     # ============================================================
     # HEX WINDOW LOGIC
@@ -247,7 +292,8 @@ class ImmagineEditor:
             new_bytes = bytearray.fromhex(hex_input)
 
             start = self.byte_offset
-            end = start + self.window_size
+            #end = start + self.window_size
+            end = start + len(new_bytes)
 
             # sostituzione a flusso continuo
             self.img_bytes[start:end] = new_bytes
@@ -287,12 +333,15 @@ class ImmagineEditor:
             self.img_bytes = bytearray(buffer.getvalue())
             self.img = Image.open(io.BytesIO(self.img_bytes))
             self.img.load()
-
+            
             self.formato_corrente = nuovo_formato
             self.byte_offset = 0
             self.aggiorna_textbox()
             self.aggiorna_interfaccia()
-
+            
+            self.checkpoints.clear()
+            self.checkpoint_index = -1
+            self.salva_checkpoint()
         except Exception:
             self.mostra_errore("Errore conversione formato")
 
@@ -326,6 +375,89 @@ class ImmagineEditor:
 
     def mostra_errore(self, messaggio):
         self.image_label.config(image="", text=messaggio, fg="red")
+    
+    def salva_checkpoint(self):
+        # elimina eventuali checkpoint futuri
+        if self.checkpoint_index < len(self.checkpoints) - 1:
+            self.checkpoints = self.checkpoints[: self.checkpoint_index + 1]
+
+        self.checkpoints.append(self.img_bytes[:])
+
+        if len(self.checkpoints) > self.max_checkpoints:
+            self.checkpoints.pop(0)
+        else:
+            self.checkpoint_index += 1
+
+        self.update_checkpoint_ui()
+
+    def update_checkpoint_ui(self):
+        total = len(self.checkpoints)
+
+        if total == 0:
+            self.checkpoint_label.config(text="Checkpoint: - / -")
+            self.prev_btn.config(state="disabled")
+            self.next_btn.config(state="disabled")
+            return
+
+        self.checkpoint_label.config(
+            text=f"Checkpoint: {self.checkpoint_index + 1} / {total}"
+        )
+
+        self.prev_btn.config(
+            state="normal" if self.checkpoint_index > 0 else "disabled"
+        )
+        self.next_btn.config(
+            state="normal" if self.checkpoint_index < total - 1 else "disabled"
+        )
+    
+    def checkpoint_precedente(self):
+        if self.checkpoint_index <= 0:
+            return
+
+        self.checkpoint_index -= 1
+        self._ripristina_da_checkpoint()
+
+    def checkpoint_successivo(self):
+        if self.checkpoint_index >= len(self.checkpoints) - 1:
+            return
+
+        self.checkpoint_index += 1
+        self._ripristina_da_checkpoint()
+
+    def _ripristina_da_checkpoint(self):
+        self.img_bytes = self.checkpoints[self.checkpoint_index][:]
+
+        self.byte_offset = (self.byte_offset // self.window_size) * self.window_size
+
+        try:
+            self.img = Image.open(io.BytesIO(self.img_bytes))
+            self.img.load()
+
+            self.aggiorna_textbox()
+            self.aggiorna_interfaccia()
+            self.update_checkpoint_ui()
+
+        except Exception:
+            self.mostra_errore("Checkpoint non valido")
+
+
+    def ripristina_immagine(self):
+        if not self.checkpoints:
+            return
+
+        self.img_bytes = self.checkpoints[-1][:]
+
+        self.byte_offset = (self.byte_offset // self.window_size) * self.window_size
+
+        try:
+            self.img = Image.open(io.BytesIO(self.img_bytes))
+            self.img.load()
+
+            self.aggiorna_textbox()
+            self.aggiorna_interfaccia()
+
+        except Exception:
+            self.mostra_errore("Ripristino fallito")
 
 
 # ============================================================
